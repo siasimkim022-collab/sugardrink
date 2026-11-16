@@ -22,9 +22,9 @@ API_KEY = st.secrets["API_KEY"]
 defaults = {
     "step": 1,
     "gender": "남자",
-    "age": 1,
-    "height": 00.0,
-    "weight": 00.0,
+    "age": 25,
+    "height": 175.0,
+    "weight": 65.0,
     "barcode": "",
     "prod_name": None,
     "found_100ml": None,
