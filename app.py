@@ -44,7 +44,7 @@ with col4:
       "몸무게(kg)를 입력하세요", min_value=30.0, max_value=200.0, value=65.0
   )
 
-# [클로드의 핵심 제안] 버튼을 누르기 전에는 아래 내용을 숨김 (단계 분리)
+# 단계 분리: 시작하기 버튼 전에는 아래 내용 숨김
 if "started" not in st.session_state:
   st.session_state.started = False
 
@@ -70,18 +70,14 @@ def get_bmi_step(bmi):
     return 5  # Obese
 
 
-# 초기 BMI 및 캐릭터 단계 계산
 initial_height_m = height / 100.0
 initial_bmi = weight / (initial_height_m**2)
 initial_step = get_bmi_step(initial_bmi)
-
-# 성별에 따른 이미지 파일명 접두사 설정
 prefix = "boy" if gender == "남자" else "girl"
 
 st.write("---")
 st.subheader(f"📊 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
 
-# 초기 캐릭터 이미지 출력
 initial_image_path = f"step {initial_step} {prefix}.png"
 try:
   initial_img = Image.open(initial_image_path)
@@ -121,34 +117,63 @@ if manual.strip():
   barcode = manual.strip()
 
 
-# 제품 조회 함수 (식품안전나라 API)
-def lookup_product(bc):
-  url = (
-      f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/C005/json/1/5/BAR_CD={bc}"
-  )
-  r = requests.get(url, timeout=10)
-  r.raise_for_status()
-  data = r.json().get("C005", {})
-  rows = data.get("row", [])
-  if not rows:
-    return None
-  return rows[0].get("PRDLST_NM", "제품명 없음")
+# [클로드 핵심 제안] C005(제품명) + I2790(영양성분) 조회 - 실패 시 솔직하게 표시 및 디버그 기능 추가
+def get_product_and_sugar(bc):
+  prod_name, sugar_val = None, None
+  debug = {}
 
-
-prod_name = None
-if barcode.strip():
   try:
-    prod_name = lookup_product(barcode.strip())
+    url = f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/C005/json/1/1/BAR_CD={bc}"
+    data = requests.get(url, timeout=5).json()
+    debug["C005"] = data
+    rows = data.get("C005", {}).get("row", [])
+    if rows:
+      prod_name = rows[0].get("PRDLST_NM")
   except Exception as e:
-    st.error(f"API 조회 중 오류가 발생했습니다: {e}")
+    debug["C005_error"] = str(e)
+
+  try:
+    url = f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/I2790/json/1/1/BAR_CD={bc}"
+    data = requests.get(url, timeout=5).json()
+    debug["I2790"] = data
+    rows = data.get("I2790", {}).get("row", [])
+    if rows:
+      try:
+        sugar_val = float(rows[0].get("NUTR_CONT5"))
+      except (TypeError, ValueError):
+        sugar_val = None
+  except Exception as e:
+    debug["I2790_error"] = str(e)
+
+  return prod_name, sugar_val, debug
+
+
+auto_sugar = 20.0
+prod_name, found_sugar, debug_info = None, None, {}
+
+if barcode.strip():
+  with st.spinner("식품 데이터베이스에서 조회 중..."):
+    prod_name, found_sugar, debug_info = get_product_and_sugar(barcode.strip())
 
   if prod_name:
-    st.info(f"✨ 인식된 제품명: **{prod_name}**")
+    st.info(f"✨ 제품명: **{prod_name}**")
+  else:
+    st.warning("제품명을 찾지 못했어요.")
+
+  if found_sugar is not None:
+    auto_sugar = found_sugar
+    st.success(
+        f"DB에서 찾은 당류: **{found_sugar}g** (기준량은 제품마다 다를 수"
+        " 있어요)"
+    )
   else:
     st.warning(
-        "등록되지 않은 바코드이거나 정보를 찾지 못했습니다. 아래에서 당류를"
-        " 직접 입력해 주세요."
+        "당류를 자동으로 찾지 못했어요. 아래에 영양성분표를 보고 직접 입력해"
+        " 주세요."
     )
+
+  with st.expander("🔧 API 응답 확인 (개발용)"):
+    st.json(debug_info)
 
 # 3. 당류 섭취량 및 기간 설정에 따른 시뮬레이션
 st.write("---")
@@ -157,7 +182,7 @@ sugar = st.number_input(
     "음료 영양성분표의 당류(g)를 입력하세요 (1회 제공량 기준)",
     min_value=0.0,
     max_value=200.0,
-    value=20.0,
+    value=float(auto_sugar),
 )
 servings = st.slider("하루에 몇 번 마시나요?", 1, 5, 1)
 months = st.slider("몇 개월 뒤를 볼까요?", 1, 12, 3)
