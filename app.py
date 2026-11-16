@@ -1,3 +1,4 @@
+import base64
 import re
 from PIL import Image, ImageOps
 import requests
@@ -20,7 +21,6 @@ st.set_page_config(
 API_KEY = st.secrets["API_KEY"]
 
 # 순수 추가 운동 소모 계수: (MET - 1) × 1회 운동시간(h) × 주당 횟수 ÷ 7
-# 안정 시 에너지 소비량(1 MET)을 제외한 체중 1kg당 일평균 순수 추가 소모 열량(kcal/kg/일)
 EXERCISE_OPTIONS = {
     "거의 안 함 (주 0회)": 0.0,
     "가벼운 운동 (주 1~2회 걷기·스트레칭)": 0.54,      # (3.5 - 1) × 0.75h × 2회 ÷ 7
@@ -93,18 +93,27 @@ def get_bmi_step(bmi):
 
 def get_bmi_label(step):
     labels = {
-        1: "저체중 (BMI 18.5 미만)",
-        2: "정상 체중 (BMI 18.5~22.9)",
-        3: "과체중 초기 (BMI 23.0~24.4)",
-        4: "과체중·비만 경계 (BMI 24.5~25.9)",
-        5: "1단계 비만 초기 (BMI 26.0~27.4)",
-        6: "1단계 비만 후기 (BMI 27.5~28.9)",
-        7: "2단계 비만 초기 (BMI 29.0~30.4)",
-        8: "2단계 비만 중기 (BMI 30.5~32.4)",
-        9: "2단계 비만 후기 (BMI 32.5~34.9)",
-        10: "3단계 고도비만 (BMI 35.0 이상)",
+        1: "저체중",
+        2: "정상 체중",
+        3: "과체중 초기",
+        4: "과체중·비만 경계",
+        5: "1단계 비만 초기",
+        6: "1단계 비만 후기",
+        7: "2단계 비만 초기",
+        8: "2단계 비만 중기",
+        9: "2단계 비만 후기",
+        10: "3단계 고도비만",
     }
     return labels.get(step, "")
+
+
+# 로컬 이미지를 HTML 나란히 배치를 위한 Base64 문자열로 변환
+def img_to_base64(path):
+    try:
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
+        return ""
 
 
 # 이미지에서 바코드 숫자 추출 (가로/세로 회전 및 명암 보정 포함)
@@ -541,7 +550,7 @@ elif current_step == 4:
             st.rerun()
 
 # =========================================================
-# [Step 5] 최종 시뮬레이션 결과 화면
+# [Step 5] 최종 시뮬레이션 결과 화면 (한눈에 보는 과거 -> 추정 체형 비교)
 # =========================================================
 elif current_step == 5:
     height_m = st.session_state.height / 100.0
@@ -591,81 +600,79 @@ elif current_step == 5:
     simulated_step = get_bmi_step(simulated_bmi)
 
     if weight_diff >= 0.05:
-        diff_text = f"+{weight_diff:.1f}kg"
-        weight_color = "#FF4B4B"
+        diff_badge = f"+{weight_diff:.1f}kg"
+        accent_color = "#DC2626"
     elif weight_diff <= -0.05:
-        diff_text = f"{weight_diff:.1f}kg"
-        weight_color = "#1E88E5"
+        diff_badge = f"{weight_diff:.1f}kg"
+        accent_color = "#2563EB"
     else:
-        diff_text = "변화 없음 (0.0kg)"
-        weight_color = "#2E7D32"
+        diff_badge = "0.0kg"
+        accent_color = "#16A34A"
 
-    st.subheader(f"🔮 5단계: {months}개월 뒤 예상 체형 시뮬레이션 결과")
-    st.markdown(
-        "<p style='font-size: 26px; font-weight: 700; line-height: 1.4;"
-        f" margin-bottom: 8px;'>예상 체중: <span style='color:"
-        f" {weight_color};'>{simulated_weight:.1f}kg</span> (현재 대비"
-        f" {diff_text}) / 예상 BMI: {simulated_bmi:.1f}</p>",
-        unsafe_allow_html=True,
+    st.subheader(f"🔮 {months}개월 뒤 체형 변화 결과")
+
+    # 모바일에서도 무조건 가로(과거 체형 -> 추정 체형)로 나란히 보이는 비교 카드
+    before_b64 = img_to_base64(f"{prefix} {initial_step}.png")
+    after_b64 = img_to_base64(f"{prefix} {simulated_step}.png")
+
+    before_img_html = (
+        f'<img src="data:image/png;base64,{before_b64}"'
+        ' style="width:100%; max-width:125px; height:145px; object-fit:contain; margin:6px auto; display:block;" />'
+        if before_b64
+        else f'<div style="height:145px; display:flex; align-items:center; justify-content:center; color:#6B7280; font-size:12px;">{prefix} {initial_step}.png</div>'
+    )
+    after_img_html = (
+        f'<img src="data:image/png;base64,{after_b64}"'
+        ' style="width:100%; max-width:125px; height:145px; object-fit:contain; margin:6px auto; display:block;" />'
+        if after_b64
+        else f'<div style="height:145px; display:flex; align-items:center; justify-content:center; color:#6B7280; font-size:12px;">{prefix} {simulated_step}.png</div>'
     )
 
-    # 현재 체형 vs 미래 예상 체형 나란히 비교
-    col_before, col_after = st.columns(2)
-    with col_before:
-        st.markdown(f"**현재 체형 ({weight:.1f}kg · BMI {initial_bmi:.1f})**")
-        try:
-            st.image(
-                Image.open(f"{prefix} {initial_step}.png"),
-                caption=f"현재: Step {initial_step} / 10 ({get_bmi_label(initial_step)})",
-                use_container_width=True,
-            )
-        except Exception:
-            st.warning(f"이미지 파일 없음: {prefix} {initial_step}.png")
-
-    with col_after:
-        st.markdown(
-            f"**{months}개월 뒤 예상 ({simulated_weight:.1f}kg · BMI {simulated_bmi:.1f})**"
-        )
-        try:
-            st.image(
-                Image.open(f"{prefix} {simulated_step}.png"),
-                caption=f"{months}개월 뒤: Step {simulated_step} / 10 ({get_bmi_label(simulated_step)})",
-                use_container_width=True,
-            )
-        except Exception:
-            st.warning(f"이미지 파일 없음: {prefix} {simulated_step}.png")
+    comparison_html = f"""
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:6px; margin:8px 0 12px 0;">
+        <div style="flex:1; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:10px 6px; text-align:center;">
+            <div style="font-size:12px; font-weight:700; color:#475569;">과거(현재) 체형</div>
+            {before_img_html}
+            <div style="font-size:18px; font-weight:800; color:#0F172A;">{weight:.1f}kg</div>
+            <div style="font-size:11px; color:#64748B;">BMI {initial_bmi:.1f} · Step {initial_step} ({get_bmi_label(initial_step)})</div>
+        </div>
+        <div style="font-size:22px; font-weight:900; color:#64748B; padding:0 2px;">➔</div>
+        <div style="flex:1; background:#FFFBEB; border:2px solid #F59E0B; border-radius:12px; padding:10px 6px; text-align:center;">
+            <div style="font-size:12px; font-weight:700; color:#B45309;">추정 체형 ({months}개월 후)</div>
+            {after_img_html}
+            <div style="font-size:18px; font-weight:800; color:{accent_color};">{simulated_weight:.1f}kg <span style="font-size:13px;">({diff_badge})</span></div>
+            <div style="font-size:11px; color:#64748B;">BMI {simulated_bmi:.1f} · Step {simulated_step} ({get_bmi_label(simulated_step)})</div>
+        </div>
+    </div>
+    """
+    st.markdown(comparison_html, unsafe_allow_html=True)
 
     if simulated_step > initial_step:
-        st.error("⚠️ 이 습관이 이어지면 체형 단계가 올라갈 수 있습니다!")
+        st.error(f"⚠️ 체형 단계가 Step {initial_step} → Step {simulated_step}로 올라갈 수 있습니다!")
     elif weight_diff > 0.5:
-        st.warning("⚠️ 체형 단계는 유지되지만 체중이 꾸준히 늘어나는 추세입니다.")
+        st.warning(f"⚠️ 체형 단계는 유지되지만 체중이 {diff_badge} 늘어나는 추세입니다.")
     else:
-        st.success("🎉 운동과 식습관 균형 덕분에 현재 체형을 유지하거나 관리할 수 있는 수준입니다.")
+        st.success("🎉 현재 체형을 안정적으로 유지할 수 있는 수준입니다.")
 
     drink_label = st.session_state.prod_name or "직접 입력 음료"
-    st.info(
-        f"📋 **상세 에너지 수지 및 음료 당류 분석 ({drink_label})**\n"
-        f"- **하루 음료 당류 섭취량:** **{daily_sugar_g:.1f}g/일** ({volume_ml}ml × {servings}회)\n"
-        f"- **하루 음료 당류 유래 열량:** **+{drink_kcal_per_day:,.0f} kcal/일** (당류 1g = 4kcal)\n"
-        f"- **평소 식사량 보정(시뮬레이션 가정치):** **{food_kcal_per_day:+d} kcal/일**"
-        f" ({st.session_state.food_intake})\n"
-        f"- **순수 추가 운동 소모 열량 ((MET-1)×체중×시간):** **-{exercise_burn_per_day:,d} kcal/일**"
-        f" ({st.session_state.exercise})\n"
-        f"- **1개월(30일) 누적 순 열량 변화:** **{one_month_net_kcal:+,.0f} kcal**\n"
-        f"- **설정 기간({months}개월) 누적 순 열량 변화:** **{total_net_kcal:+,.0f} kcal**"
-    )
+    with st.expander(f"📋 상세 칼로리·당류 분석 보기 ({drink_label})"):
+        st.markdown(
+            f"- **하루 음료 당류 섭취량:** **{daily_sugar_g:.1f}g/일** ({volume_ml}ml × {servings}회)\n"
+            f"- **하루 음료 당류 유래 열량:** **+{drink_kcal_per_day:,.0f} kcal/일** (당류 1g = 4kcal)\n"
+            f"- **평소 식사량 보정(시뮬레이션 가정치):** **{food_kcal_per_day:+d} kcal/일**"
+            f" ({st.session_state.food_intake})\n"
+            f"- **순수 추가 운동 소모 열량 ((MET-1)×체중×시간):** **-{exercise_burn_per_day:,d} kcal/일**"
+            f" ({st.session_state.exercise})\n"
+            f"- **1개월(30일) 누적 순 열량 변화:** **{one_month_net_kcal:+,.0f} kcal**\n"
+            f"- **설정 기간({months}개월) 누적 순 열량 변화:** **{total_net_kcal:+,.0f} kcal**\n\n"
+            f"※ 참고 기초대사량(만 {st.session_state.age}세 기준): 약 {bmr:,d} kcal/일 | 본 결과는"
+            " 음료 당류 섭취와 생활 습관에 따른 에너지 수지 원리를 이해하기 위한 교육용 가상"
+            " 시뮬레이션입니다."
+        )
 
-    st.caption(
-        f"※ 참고 기초대사량(만 {st.session_state.age}세 기준): 약 {bmr:,d} kcal/일 | 본 결과는"
-        " 음료 당류 섭취와 생활 습관에 따른 에너지 수지 원리를 이해하기 위한 교육용 가상"
-        " 시뮬레이션이며, 개인의 대사 적응이나 음료 내 기타 영양소(지방·단백질 등)에 따라"
-        " 실제 체중 변화는 달라질 수 있습니다."
-    )
-
-    st.write("")
     col_prev, col_restart = st.columns(2)
     with col_prev:
-        if st.button("◀ 섭취량/기간 다시 조절하기", use_container_width=True):
+        if st.button("◀ 섭취량/기간 조절", use_container_width=True):
             st.session_state.step = 4
             st.rerun()
     with col_restart:
