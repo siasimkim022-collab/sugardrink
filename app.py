@@ -55,6 +55,21 @@ def get_bmi_step(bmi):
     return 5  # Obese
 
 
+# 이미지에서 바코드 숫자 추출 (가로/세로 회전 및 명암 보정 포함)
+def extract_barcode_from_image(image_file):
+  img = Image.open(image_file).convert("L")
+  candidates = [
+      img,
+      ImageOps.autocontrast(img).resize((img.width * 2, img.height * 2)),
+      img.rotate(90, expand=True),
+  ]
+  for cand in candidates:
+    results = decode(cand)
+    if results:
+      return results[0].data.decode("utf-8")
+  return ""
+
+
 # 국내 주요 시판 음료 참고용 대표 당류 데이터 (100ml당 당류 g 기준)
 KOREAN_DRINK_SUGAR_100ML = {
     "트레비": 0.0,
@@ -252,26 +267,32 @@ elif current_step == 2:
 # =========================================================
 elif current_step == 3:
   st.subheader("📷 3단계: 음료 바코드 및 제품 확인")
-  st.write("음료의 바코드를 스캔하거나 번호를 입력하면 자동으로 다음 단계로 넘어갑니다.")
+  st.write("음료의 바코드를 촬영하거나 번호를 입력하면 자동으로 다음 단계로 넘어갑니다.")
 
   reset_cnt = st.session_state.scan_reset_cnt
   barcode_input = ""
 
   if SCAN_OK:
-    photo = st.camera_input(
-        "바코드를 가까이, 선명하게 비춰 촬영하세요", key=f"cam_{reset_cnt}"
+    # 방법 1: 스마트폰 기본 후면 카메라로 바로 촬영 (자동 초점 지원)
+    uploaded_photo = st.file_uploader(
+        "📸 후면 카메라로 바로 촬영하기 (눌러서 '사진 찍기' 선택)",
+        type=["png", "jpg", "jpeg"],
+        key=f"upload_{reset_cnt}",
     )
-    if photo:
-      img = Image.open(photo).convert("L")
-      results = decode(img)
-      if not results:
-        img = ImageOps.autocontrast(img)
-        img = img.resize((img.width * 2, img.height * 2))
-        results = decode(img)
-      if results:
-        barcode_input = results[0].data.decode("utf-8")
-      else:
-        st.warning("바코드를 인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
+    if uploaded_photo:
+      barcode_input = extract_barcode_from_image(uploaded_photo)
+      if not barcode_input:
+        st.warning("사진에서 바코드를 읽지 못했어요. 바코드가 선명하게 나오도록 다시 찍어주세요.")
+
+    # 방법 2: 브라우저 내장 카메라 사용 (전면으로 열릴 수 있음)
+    with st.expander("또는 웹 카메라로 직접 찍기 (전면 카메라가 켜지면 🔄 버튼으로 전환)"):
+      photo = st.camera_input(
+          "바코드를 가까이 비춰 촬영하세요", key=f"cam_{reset_cnt}"
+      )
+      if photo and not barcode_input:
+        barcode_input = extract_barcode_from_image(photo)
+        if not barcode_input:
+          st.warning("바코드를 인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
   else:
     st.info("바코드 스캔 기능을 불러오지 못해 직접 입력만 가능합니다.")
 
