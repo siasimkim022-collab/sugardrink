@@ -18,43 +18,27 @@ st.set_page_config(
 # API 키 설정 (Streamlit Secrets 활용)
 API_KEY = st.secrets["API_KEY"]
 
-st.title("액상과당 타임머신 시뮬레이터 🥤")
-st.write(
-    "내 체형을 먼저 확인하고, 음료를 마셨을 때의 미래 체형 변화를"
-    " 시뮬레이션해보세요!"
-)
-st.write("---")
-
-# 1. 첫 화면: 사용자 기본 정보 입력 (성별, 나이, 키, 몸무게)
-st.subheader("👤 기본 정보를 입력해주세요")
-col1, col2 = st.columns(2)
-with col1:
-  gender = st.radio("성별을 선택하세요", ["남자", "여자"])
-with col2:
-  age = st.number_input(
-      "나이를 입력하세요", min_value=10, max_value=100, value=25
-  )
-
-col3, col4 = st.columns(2)
-with col3:
-  height = st.number_input(
-      "키(cm)를 입력하세요", min_value=100.0, max_value=250.0, value=175.0
-  )
-with col4:
-  weight = st.number_input(
-      "몸무게(kg)를 입력하세요", min_value=30.0, max_value=200.0, value=65.0
-  )
-
-# 단계 분리: 시작하기 버튼 전에는 아래 내용 숨김
-if "started" not in st.session_state:
-  st.session_state.started = False
-
-st.write("")
-if not st.session_state.started:
-  if st.button("확인하고 시작하기 ▶", use_container_width=True):
-    st.session_state.started = True
-    st.rerun()
-  st.stop()
+# 세션 상태 초기화 (화면이 바뀌어도 입력값이 유지되도록 저장)
+defaults = {
+    "step": 1,
+    "gender": "남자",
+    "age": 25,
+    "height": 175.0,
+    "weight": 65.0,
+    "barcode": "",
+    "prod_name": None,
+    "found_100ml": None,
+    "source_type": None,
+    "sugar_per_100ml": 10.0,
+    "vol_choice": "250ml (작은 캔)",
+    "custom_vol": 300,
+    "servings": 1,
+    "months": 3,
+    "scan_reset_cnt": 0,
+}
+for k, v in defaults.items():
+  if k not in st.session_state:
+    st.session_state[k] = v
 
 
 # 초기 BMI 계산 및 5단계 매핑 함수
@@ -70,52 +54,6 @@ def get_bmi_step(bmi):
   else:
     return 5  # Obese
 
-
-initial_height_m = height / 100.0
-initial_bmi = weight / (initial_height_m**2)
-initial_step = get_bmi_step(initial_bmi)
-prefix = "boy" if gender == "남자" else "girl"
-
-st.write("---")
-st.subheader(f"📊 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
-
-initial_image_path = f"step {initial_step} {prefix}.png"
-try:
-  initial_img = Image.open(initial_image_path)
-  st.image(
-      initial_img,
-      caption=f"현재 상태 (Step {initial_step})",
-      width=250,
-  )
-except Exception:
-  st.warning(f"이미지 파일을 찾지 못했습니다: {initial_image_path}")
-
-st.write("---")
-
-# 2. 바코드 카메라 인식 또는 직접 입력
-st.subheader("📷 음료 바코드 및 제품 확인")
-barcode = ""
-
-if SCAN_OK:
-  photo = st.camera_input("바코드를 가까이, 선명하게 비춰 촬영하세요")
-  if photo:
-    img = Image.open(photo).convert("L")
-    results = decode(img)
-    if not results:
-      img = ImageOps.autocontrast(img)
-      img = img.resize((img.width * 2, img.height * 2))
-      results = decode(img)
-    if results:
-      barcode = results[0].data.decode("utf-8")
-      st.success(f"인식된 바코드: {barcode}")
-    else:
-      st.warning("인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
-else:
-  st.info("바코드 스캔 기능을 불러오지 못해 직접 입력만 가능합니다.")
-
-manual = st.text_input("또는 바코드 번호 직접 입력", placeholder="바코드 숫자를 입력하세요")
-if manual.strip():
-  barcode = manual.strip()
 
 # 국내 주요 시판 음료 참고용 대표 당류 데이터 (100ml당 당류 g 기준)
 KOREAN_DRINK_SUGAR_100ML = {
@@ -166,8 +104,8 @@ def find_local_sugar_100ml(prod_name):
     return None
   norm_name = re.sub(r"[^가-힣a-zA-Z0-9]", "", prod_name).lower()
 
-  # 제로/무설탕/블랙 제품은 일반 설탕 음료보다 먼저 판별
-  if any(w in norm_name for w in ["제로", "zero", "무설탕", "무당", "블랙"]):
+  # 제로/무설탕 제품은 일반 설탕 음료보다 먼저 판별
+  if any(w in norm_name for w in ["제로", "zero", "무설탕", "무당"]):
     return 0.0
 
   for key in sorted(KOREAN_DRINK_SUGAR_100ML.keys(), key=len, reverse=True):
@@ -191,7 +129,7 @@ def lookup_nutrition_100ml(bc):
   except Exception:
     pass
 
-  # 2단계: Open Food Facts API로 100ml 기준 당류 직접 조회
+  # 2단계: Open Food Facts API로 100ml 기준 당류 직접 조회 (0~100g 범위 검증)
   try:
     url_off = f"https://world.openfoodfacts.org/api/v2/product/{bc}.json"
     headers = {"User-Agent": "SugarDrinkSimulator/1.0"}
@@ -204,8 +142,10 @@ def lookup_nutrition_100ml(bc):
         )
       nutriments = product.get("nutriments", {})
       if nutriments.get("sugars_100g") is not None:
-        sugar_100ml = round(float(nutriments["sugars_100g"]), 1)
-        source_type = "db"
+        val = round(float(nutriments["sugars_100g"]), 1)
+        if 0 <= val <= 100:
+          sugar_100ml = val
+          source_type = "db"
   except Exception:
     pass
 
@@ -219,108 +159,353 @@ def lookup_nutrition_100ml(bc):
   return prod_name, sugar_100ml, source_type
 
 
-default_sugar_100ml = 10.0
-input_key = "sugar100_default"
-
-if barcode.strip():
-  bc_clean = barcode.strip()
-  with st.spinner("제품 정보를 조회하는 중..."):
-    prod_name, found_100ml, source_type = lookup_nutrition_100ml(bc_clean)
-
-  if prod_name:
-    st.info(f"✨ 제품명: **{prod_name}**")
-  else:
-    st.warning(
-        "바코드 DB에서 제품명을 찾지 못했어요 (2018년 이후 신제품이거나 미등록"
-        " 바코드일 수 있습니다). 아래에 직접 입력해 주세요."
-    )
-
-  if found_100ml is not None:
-    default_sugar_100ml = found_100ml
-    input_key = f"sugar100_{bc_clean}"
-    if source_type == "db":
-      st.success(
-          "✅ Open Food Facts(사용자 등록 데이터) 100ml당 당류:"
-          f" **{found_100ml}g**"
-      )
-    else:
-      st.info(
-          f"💡 100ml당 당류(참고용 대표값): **{found_100ml}g** (라벨과 다르면"
-          " 아래에서 수정하세요)"
-      )
-  else:
-    input_key = f"sugar100_{bc_clean}_none"
-    st.warning(
-        "당류 정보가 등록되지 않은 음료입니다. 영양성분표를 보고 100ml당 당류를"
-        " 입력해 주세요."
-    )
-
-# 3. 100ml당 당류 및 마시는 양(ml) 기반 시뮬레이션
+# 공통 헤더 및 단계 진행바
+current_step = st.session_state.step
+st.title("액상과당 타임머신 시뮬레이터 🥤")
+st.progress(current_step / 5)
+st.caption(f"단계 {current_step} / 5")
 st.write("---")
-st.subheader("🍬 당류 섭취량 및 기간 설정")
 
-sugar_per_100ml = st.number_input(
-    "100ml당 당류(g)를 입력하세요 (총 당류 ÷ 총 내용량 × 100)",
-    min_value=0.0,
-    max_value=100.0,
-    value=float(default_sugar_100ml),
-    step=0.1,
-    key=input_key,
-)
+# =========================================================
+# [Step 1] 기본 정보 입력 화면
+# =========================================================
+if current_step == 1:
+  st.subheader("👤 1단계: 기본 정보를 입력해주세요")
+  st.write("내 현재 체형을 분석하기 위해 기본 신체 정보를 입력합니다.")
 
-vol_choice = st.radio(
-    "한 번에 마시는 양(ml)을 선택하세요",
-    ["250ml (작은 캔)", "355ml (큰 캔)", "500ml (페트병)", "직접 입력"],
-    horizontal=True,
-)
+  col1, col2 = st.columns(2)
+  with col1:
+    gender_idx = 0 if st.session_state.gender == "남자" else 1
+    gender = st.radio("성별을 선택하세요", ["남자", "여자"], index=gender_idx)
+  with col2:
+    age = st.number_input(
+        "나이를 입력하세요",
+        min_value=10,
+        max_value=100,
+        value=int(st.session_state.age),
+    )
 
-if vol_choice == "250ml (작은 캔)":
-  volume_ml = 250
-elif vol_choice == "355ml (큰 캔)":
-  volume_ml = 355
-elif vol_choice == "500ml (페트병)":
-  volume_ml = 500
-else:
-  volume_ml = st.number_input(
-      "마시는 양(ml)을 직접 입력하세요",
-      min_value=10,
-      max_value=3000,
-      value=300,
-      step=10,
+  col3, col4 = st.columns(2)
+  with col3:
+    height = st.number_input(
+        "키(cm)를 입력하세요",
+        min_value=100.0,
+        max_value=250.0,
+        value=float(st.session_state.height),
+    )
+  with col4:
+    weight = st.number_input(
+        "몸무게(kg)를 입력하세요",
+        min_value=30.0,
+        max_value=200.0,
+        value=float(st.session_state.weight),
+    )
+
+  st.write("")
+  if st.button("다음: 현재 체형 확인하기 ▶", use_container_width=True):
+    st.session_state.gender = gender
+    st.session_state.age = age
+    st.session_state.height = height
+    st.session_state.weight = weight
+    st.session_state.step = 2
+    st.rerun()
+
+# =========================================================
+# [Step 2] 현재 체형 진단 화면
+# =========================================================
+elif current_step == 2:
+  height_m = st.session_state.height / 100.0
+  initial_bmi = st.session_state.weight / (height_m**2)
+  initial_step = get_bmi_step(initial_bmi)
+  prefix = "boy" if st.session_state.gender == "남자" else "girl"
+
+  st.subheader(f"📊 2단계: 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
+  st.write(
+      f"키 **{st.session_state.height:.1f}cm**, 몸무게"
+      f" **{st.session_state.weight:.1f}kg** 기준 현재 상태입니다."
   )
 
-once_sugar = round(sugar_per_100ml * volume_ml / 100.0, 1)
-st.info(
-    f"🥤 1회 섭취 당류: **{once_sugar}g** (100ml당 {sugar_per_100ml:.1f}g ×"
-    f" {volume_ml}ml)"
-)
+  initial_image_path = f"step {initial_step} {prefix}.png"
+  try:
+    initial_img = Image.open(initial_image_path)
+    st.image(
+        initial_img,
+        caption=f"현재 상태 (Step {initial_step})",
+        width=250,
+    )
+  except Exception:
+    st.warning(f"이미지 파일을 찾지 못했습니다: {initial_image_path}")
 
-servings = st.slider("하루에 몇 번 마시나요?", 1, 5, 1)
-months = st.slider("몇 개월 뒤를 볼까요?", 1, 12, 3)
+  st.write("")
+  col_prev, col_next = st.columns(2)
+  with col_prev:
+    if st.button("◀ 이전 (정보 수정)", use_container_width=True):
+      st.session_state.step = 1
+      st.rerun()
+  with col_next:
+    if st.button("다음: 음료 바코드 확인하기 ▶", use_container_width=True):
+      st.session_state.step = 3
+      st.rerun()
 
-# 당류 1g = 4kcal, 체중 1kg ≈ 7,700kcal 가정
-extra_kcal = once_sugar * 4 * servings * 30 * months
-simulated_weight = weight + extra_kcal / 7700
-simulated_bmi = simulated_weight / (initial_height_m**2)
-simulated_step = get_bmi_step(simulated_bmi)
+# =========================================================
+# [Step 3] 음료 바코드 및 제품 확인 화면
+# =========================================================
+elif current_step == 3:
+  st.subheader("📷 3단계: 음료 바코드 및 제품 확인")
+  st.write("음료의 바코드를 스캔하거나 번호를 입력하면 자동으로 다음 단계로 넘어갑니다.")
 
-st.subheader(
-    f"🔮 {months}개월 뒤 예상 체형 (예상 체중: {simulated_weight:.1f}kg, BMI:"
-    f" {simulated_bmi:.1f})"
-)
-st.caption("섭취 열량만 늘고 다른 조건은 같다고 가정한 단순 계산입니다.")
+  reset_cnt = st.session_state.scan_reset_cnt
+  barcode_input = ""
 
-sim_image_path = f"step {simulated_step} {prefix}.png"
-try:
-  st.image(
-      Image.open(sim_image_path),
-      caption=f"{months}개월 뒤 변화된 모습 (Step {simulated_step})",
-      width=250,
+  if SCAN_OK:
+    photo = st.camera_input(
+        "바코드를 가까이, 선명하게 비춰 촬영하세요", key=f"cam_{reset_cnt}"
+    )
+    if photo:
+      img = Image.open(photo).convert("L")
+      results = decode(img)
+      if not results:
+        img = ImageOps.autocontrast(img)
+        img = img.resize((img.width * 2, img.height * 2))
+        results = decode(img)
+      if results:
+        barcode_input = results[0].data.decode("utf-8")
+      else:
+        st.warning("바코드를 인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
+  else:
+    st.info("바코드 스캔 기능을 불러오지 못해 직접 입력만 가능합니다.")
+
+  manual = st.text_input(
+      "또는 바코드 번호 직접 입력 후 엔터(Enter)",
+      placeholder="바코드 숫자(8~14자리)를 입력하세요",
+      key=f"manual_{reset_cnt}",
   )
-except Exception:
-  st.warning(f"이미지 파일을 찾지 못했습니다: {sim_image_path}")
+  if manual.strip():
+    barcode_input = manual.strip()
 
-if simulated_step > initial_step:
-  st.error("⚠️ 이 습관이 이어지면 체형 단계가 올라갈 수 있습니다!")
-else:
-  st.success("🎉 현재 체형 단계를 안전하게 유지할 수 있는 수준입니다.")
+  # 바코드가 숫자 8~14자리로 인식되면 조회 후 바로 4단계로 전환
+  if barcode_input.strip():
+    bc_clean = barcode_input.strip()
+    if re.fullmatch(r"\d{8,14}", bc_clean):
+      with st.spinner("제품 정보를 조회하고 다음 단계로 이동하는 중..."):
+        prod_name, found_100ml, source_type = lookup_nutrition_100ml(bc_clean)
+
+      st.session_state.barcode = bc_clean
+      st.session_state.prod_name = prod_name
+      st.session_state.found_100ml = found_100ml
+      st.session_state.source_type = source_type
+      st.session_state.sugar_per_100ml = (
+          float(found_100ml) if found_100ml is not None else 10.0
+      )
+      st.session_state.step = 4
+      st.rerun()
+    else:
+      st.warning(
+          "유효한 상품 바코드(숫자 8~14자리)가 아닙니다. 바코드를 다시 찍거나 숫자로"
+          " 입력해 주세요."
+      )
+
+  st.write("---")
+  col_prev, col_skip = st.columns(2)
+  with col_prev:
+    if st.button("◀ 이전 (현재 체형)", use_container_width=True):
+      st.session_state.step = 2
+      st.rerun()
+  with col_skip:
+    if st.button("바코드 없이 직접 입력하기 ▶", use_container_width=True):
+      st.session_state.barcode = ""
+      st.session_state.prod_name = None
+      st.session_state.found_100ml = None
+      st.session_state.source_type = None
+      st.session_state.sugar_per_100ml = 10.0
+      st.session_state.step = 4
+      st.rerun()
+
+# =========================================================
+# [Step 4] 당류 섭취량 및 기간 설정 화면
+# =========================================================
+elif current_step == 4:
+  st.subheader("🍬 4단계: 당류 섭취량 및 기간 설정")
+
+  # 3단계 바코드 조회 결과 요약 안내
+  if st.session_state.barcode:
+    st.success(f"인식된 바코드: **{st.session_state.barcode}**")
+    if st.session_state.prod_name:
+      st.info(f"✨ 제품명: **{st.session_state.prod_name}**")
+    else:
+      st.warning(
+          "바코드 DB에서 제품명을 찾지 못했어요 (2018년 이후 신제품이거나 미등록"
+          " 바코드일 수 있습니다). 아래에 직접 입력해 주세요."
+      )
+
+    if st.session_state.found_100ml is not None:
+      if st.session_state.source_type == "db":
+        st.success(
+            "✅ Open Food Facts(사용자 등록 데이터) 100ml당 당류:"
+            f" **{st.session_state.found_100ml}g**"
+        )
+      else:
+        st.info(
+            f"💡 100ml당 당류(참고용 대표값): **{st.session_state.found_100ml}g**"
+            " (라벨과 다르면 아래에서 수정하세요)"
+        )
+    else:
+      st.warning(
+          "당류 정보가 등록되지 않은 음료입니다. 영양성분표를 보고 100ml당 당류를"
+          " 입력해 주세요."
+      )
+
+  sugar_per_100ml = st.number_input(
+      "100ml당 당류(g)를 입력하세요 (총 당류 ÷ 총 내용량 × 100)",
+      min_value=0.0,
+      max_value=100.0,
+      value=float(st.session_state.sugar_per_100ml),
+      step=0.1,
+  )
+
+  vol_options = [
+      "250ml (작은 캔)",
+      "355ml (큰 캔)",
+      "500ml (페트병)",
+      "직접 입력",
+  ]
+  vol_idx = (
+      vol_options.index(st.session_state.vol_choice)
+      if st.session_state.vol_choice in vol_options
+      else 0
+  )
+  vol_choice = st.radio(
+      "한 번에 마시는 양(ml)을 선택하세요",
+      vol_options,
+      index=vol_idx,
+      horizontal=True,
+  )
+
+  if vol_choice == "250ml (작은 캔)":
+    volume_ml = 250
+    custom_vol = st.session_state.custom_vol
+  elif vol_choice == "355ml (큰 캔)":
+    volume_ml = 355
+    custom_vol = st.session_state.custom_vol
+  elif vol_choice == "500ml (페트병)":
+    volume_ml = 500
+    custom_vol = st.session_state.custom_vol
+  else:
+    custom_vol = st.number_input(
+        "마시는 양(ml)을 직접 입력하세요",
+        min_value=10,
+        max_value=3000,
+        value=int(st.session_state.custom_vol),
+        step=10,
+    )
+    volume_ml = custom_vol
+
+  once_sugar = round(sugar_per_100ml * volume_ml / 100.0, 1)
+  st.info(
+      f"🥤 1회 섭취 당류: **{once_sugar}g** (100ml당 {sugar_per_100ml:.1f}g ×"
+      f" {volume_ml}ml)"
+  )
+
+  servings = st.slider(
+      "하루에 몇 번 마시나요?", 1, 5, int(st.session_state.servings)
+  )
+  months = st.slider(
+      "몇 개월 뒤를 볼까요?", 1, 12, int(st.session_state.months)
+  )
+
+  st.write("")
+  col_prev, col_next = st.columns(2)
+  with col_prev:
+    if st.button("◀ 이전 (바코드 다시 입력)", use_container_width=True):
+      st.session_state.barcode = ""
+      st.session_state.prod_name = None
+      st.session_state.found_100ml = None
+      st.session_state.source_type = None
+      st.session_state.scan_reset_cnt += 1
+      st.session_state.step = 3
+      st.rerun()
+  with col_next:
+    if st.button("다음: 미래 체형 결과 보기 🔮", use_container_width=True):
+      st.session_state.sugar_per_100ml = sugar_per_100ml
+      st.session_state.vol_choice = vol_choice
+      st.session_state.custom_vol = custom_vol
+      st.session_state.servings = servings
+      st.session_state.months = months
+      st.session_state.step = 5
+      st.rerun()
+
+# =========================================================
+# [Step 5] 최종 시뮬레이션 결과 화면
+# =========================================================
+elif current_step == 5:
+  height_m = st.session_state.height / 100.0
+  weight = st.session_state.weight
+  initial_bmi = weight / (height_m**2)
+  initial_step = get_bmi_step(initial_bmi)
+  prefix = "boy" if st.session_state.gender == "남자" else "girl"
+
+  vol_choice = st.session_state.vol_choice
+  if vol_choice == "250ml (작은 캔)":
+    volume_ml = 250
+  elif vol_choice == "355ml (큰 캔)":
+    volume_ml = 355
+  elif vol_choice == "500ml (페트병)":
+    volume_ml = 500
+  else:
+    volume_ml = st.session_state.custom_vol
+
+  once_sugar = round(st.session_state.sugar_per_100ml * volume_ml / 100.0, 1)
+  servings = st.session_state.servings
+  months = st.session_state.months
+
+  # 당류 1g = 4kcal, 체중 1kg ≈ 7,700kcal 가정
+  extra_kcal = once_sugar * 4 * servings * 30 * months
+  simulated_weight = weight + extra_kcal / 7700
+  simulated_bmi = simulated_weight / (height_m**2)
+  simulated_step = get_bmi_step(simulated_bmi)
+
+  st.subheader(f"🔮 5단계: {months}개월 뒤 예상 체형 결과")
+  st.write(
+      f"예상 체중: **{simulated_weight:.1f}kg** (현재 대비"
+      f" **+{simulated_weight - weight:.1f}kg**) / 예상 BMI:"
+      f" **{simulated_bmi:.1f}**"
+  )
+  st.caption("섭취 열량만 늘고 다른 조건은 같다고 가정한 단순 계산입니다.")
+
+  sim_image_path = f"step {simulated_step} {prefix}.png"
+  try:
+    st.image(
+        Image.open(sim_image_path),
+        caption=f"{months}개월 뒤 변화된 모습 (Step {simulated_step})",
+        width=250,
+    )
+  except Exception:
+    st.warning(f"이미지 파일을 찾지 못했습니다: {sim_image_path}")
+
+  if simulated_step > initial_step:
+    st.error("⚠️ 이 습관이 이어지면 체형 단계가 올라갈 수 있습니다!")
+  else:
+    st.success("🎉 현재 체형 단계를 안전하게 유지할 수 있는 수준입니다.")
+
+  drink_label = st.session_state.prod_name or "직접 입력 음료"
+  st.info(
+      f"📋 시뮬레이션 요약: **{drink_label}** ({volume_ml}ml, 당류"
+      f" {once_sugar}g) × 하루 {servings}회 × {months}개월 = 누적 추가 열량"
+      f" **{extra_kcal:,.0f} kcal**"
+  )
+
+  st.write("")
+  col_prev, col_restart = st.columns(2)
+  with col_prev:
+    if st.button("◀ 섭취량/기간 다시 조절하기", use_container_width=True):
+      st.session_state.step = 4
+      st.rerun()
+  with col_restart:
+    if st.button("처음부터 다시 하기 🔄", use_container_width=True):
+      st.session_state.barcode = ""
+      st.session_state.prod_name = None
+      st.session_state.found_100ml = None
+      st.session_state.source_type = None
+      st.session_state.scan_reset_cnt += 1
+      st.session_state.step = 1
+      st.rerun()
