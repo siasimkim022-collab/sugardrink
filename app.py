@@ -3,12 +3,7 @@ import re
 from PIL import Image, ImageOps
 import requests
 import streamlit as st
-
-try:
-    from streamlit_qrcode_scanner import qrcode_scanner
-    LIVE_SCAN_OK = True
-except Exception:
-    LIVE_SCAN_OK = False
+import streamlit.components.v1 as components
 
 try:
     from pyzbar.pyzbar import decode
@@ -137,6 +132,153 @@ def extract_barcode_from_image(image_file):
         if results:
             return results[0].data.decode("utf-8")
     return ""
+
+
+# 브라우저 내장 실시간 바코드 스캐너 (추가 파이썬 패키지 불필요)
+def render_auto_barcode_scanner():
+    scanner_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8" />
+      <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+      <style>
+        body {
+          margin: 0;
+          padding: 0;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          background: transparent;
+        }
+        .wrap {
+          border: 2px dashed #94A3B8;
+          border-radius: 12px;
+          padding: 10px;
+          background: #F8FAFC;
+          text-align: center;
+        }
+        #reader {
+          width: 100%;
+          max-width: 380px;
+          margin: 0 auto;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        #status {
+          font-size: 13px;
+          font-weight: 600;
+          color: #334155;
+          margin-top: 8px;
+        }
+        #startBtn {
+          display: none;
+          margin: 8px auto 0 auto;
+          padding: 8px 16px;
+          font-size: 14px;
+          font-weight: 700;
+          color: #FFFFFF;
+          background: #2563EB;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="wrap">
+        <div id="reader"></div>
+        <div id="status">📷 후면 카메라를 켜는 중입니다... 바코드를 비춰주세요.</div>
+        <button id="startBtn" onclick="startCamera()">카메라 다시 시작하기</button>
+      </div>
+
+      <script>
+        let html5QrCode = null;
+        let hasScanned = false;
+
+        function sendBarcodeToStreamlit(code) {
+          try {
+            const parentDoc = window.parent.document;
+            const inputs = parentDoc.querySelectorAll('input[type="text"]');
+            let targetInput = null;
+            for (const inp of inputs) {
+              if ((inp.placeholder || "").includes("바코드")) {
+                targetInput = inp;
+                break;
+              }
+            }
+            if (targetInput) {
+              const nativeSetter = Object.getOwnPropertyDescriptor(
+                window.parent.HTMLInputElement.prototype,
+                "value"
+              ).set;
+              nativeSetter.call(targetInput, code);
+              targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+              targetInput.dispatchEvent(
+                new KeyboardEvent("keydown", {
+                  key: "Enter",
+                  code: "Enter",
+                  keyCode: 13,
+                  which: 13,
+                  bubbles: true,
+                })
+              );
+              targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+              targetInput.blur();
+            }
+          } catch (e) {
+            document.getElementById("status").innerText =
+              "✅ 인식된 바코드: " + code + " (아래 입력칸에 입력해 주세요)";
+          }
+        }
+
+        function onScanSuccess(decodedText) {
+          if (hasScanned) return;
+          const clean = (decodedText || "").trim();
+          if (/^\\d{8,14}$/.test(clean)) {
+            hasScanned = true;
+            document.getElementById("status").style.color = "#16A34A";
+            document.getElementById("status").innerText =
+              "✅ 바코드 인식 완료 (" + clean + ")! 다음 단계로 이동합니다...";
+            if (html5QrCode) {
+              html5QrCode.stop().catch(() => {});
+            }
+            sendBarcodeToStreamlit(clean);
+          }
+        }
+
+        function startCamera() {
+          document.getElementById("startBtn").style.display = "none";
+          document.getElementById("status").style.color = "#334155";
+          document.getElementById("status").innerText =
+            "📷 후면 카메라를 켜는 중입니다... 바코드를 비춰주세요.";
+
+          if (!html5QrCode) {
+            html5QrCode = new Html5Qrcode("reader");
+          }
+          const config = {
+            fps: 12,
+            qrbox: { width: 250, height: 120 },
+            aspectRatio: 1.5,
+          };
+          html5QrCode
+            .start({ facingMode: "environment" }, config, onScanSuccess, () => {})
+            .then(() => {
+              document.getElementById("status").innerText =
+                "🔍 바코드를 사각형 안에 비추면 자동으로 찍힙니다!";
+            })
+            .catch((err) => {
+              document.getElementById("status").style.color = "#DC2626";
+              document.getElementById("status").innerText =
+                "⚠️ 브라우저 카메라 권한을 허용하거나 아래 사진 촬영/직접 입력을 이용해 주세요.";
+              document.getElementById("startBtn").style.display = "inline-block";
+            });
+        }
+
+        window.addEventListener("load", startCamera);
+      </script>
+    </body>
+    </html>
+    """
+    components.html(scanner_html, height=275)
 
 
 # 국내 주요 시판 음료 참고용 대표 당류 데이터 (100ml당 당류 g 기준)
@@ -377,18 +519,13 @@ elif current_step == 3:
     reset_cnt = st.session_state.scan_reset_cnt
     barcode_input = ""
 
-    if LIVE_SCAN_OK:
-        st.caption("💡 카메라 권한을 허용한 뒤, 밝은 곳에서 바코드를 15~20cm 거리에 맞춰주세요.")
-        scanned_code = qrcode_scanner(key=f"live_scanner_{reset_cnt}")
-        if scanned_code:
-            barcode_input = str(scanned_code).strip()
-    else:
-        st.info("실시간 스캐너를 불러오는 중이거나 지원되지 않는 환경입니다. 아래에서 직접 입력하거나 사진을 올려주세요.")
+    # 브라우저 내장 실시간 자동 스캐너 실행
+    render_auto_barcode_scanner()
 
-    # 보조 수단: 바코드 번호 직접 입력 및 사진 업로드
+    # 자동 인식 결과를 받거나 직접 입력하는 입력칸
     manual = st.text_input(
-        "또는 바코드 번호 직접 입력 후 엔터(Enter)",
-        placeholder="바코드 숫자(8~14자리)를 입력하세요",
+        "바코드 번호 자동 입력 / 직접 입력 후 엔터(Enter)",
+        placeholder="바코드 숫자(8~14자리)가 자동 입력되거나 직접 입력하세요",
         key=f"manual_{reset_cnt}",
     )
     if manual.strip():
