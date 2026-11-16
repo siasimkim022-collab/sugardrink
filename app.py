@@ -5,10 +5,16 @@ import requests
 import streamlit as st
 
 try:
-    from pyzbar.pyzbar import decode
-    SCAN_OK = True
+    from streamlit_qrcode_scanner import qrcode_scanner
+    LIVE_SCAN_OK = True
 except Exception:
-    SCAN_OK = False
+    LIVE_SCAN_OK = False
+
+try:
+    from pyzbar.pyzbar import decode
+    PHOTO_SCAN_OK = True
+except Exception:
+    PHOTO_SCAN_OK = False
 
 # 페이지 설정
 st.set_page_config(
@@ -116,8 +122,10 @@ def img_to_base64(path):
         return ""
 
 
-# 이미지에서 바코드 숫자 추출 (가로/세로 회전 및 명암 보정 포함)
+# 사진 업로드 보조용 바코드 추출 함수
 def extract_barcode_from_image(image_file):
+    if not PHOTO_SCAN_OK:
+        return ""
     img = Image.open(image_file).convert("L")
     candidates = [
         img,
@@ -180,7 +188,6 @@ def find_local_sugar_100ml(prod_name):
         return None
     norm_name = re.sub(r"[^가-힣a-zA-Z0-9]", "", prod_name).lower()
 
-    # 제로/무설탕 제품은 일반 설탕 음료보다 먼저 판별
     if any(w in norm_name for w in ["제로", "zero", "무설탕", "무당"]):
         return 0.0
 
@@ -193,9 +200,9 @@ def find_local_sugar_100ml(prod_name):
 def lookup_nutrition_100ml(bc):
     prod_name = None
     sugar_100ml = None
-    source_type = None  # "db" 또는 "ref"
+    source_type = None
 
-    # 1단계: 식품안전나라 C005로 한국 제품명 조회 (2018년 이전 등록 제품 중심)
+    # 1단계: 식품안전나라 C005로 한국 제품명 조회
     try:
         url_c005 = f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/C005/json/1/5/BAR_CD={bc}"
         data_c005 = requests.get(url_c005, timeout=5).json()
@@ -205,7 +212,7 @@ def lookup_nutrition_100ml(bc):
     except Exception:
         pass
 
-    # 2단계: Open Food Facts API 조회 (sugars_100ml 및 액체 정규화 sugars_100g 확인)
+    # 2단계: Open Food Facts API 조회
     try:
         url_off = f"https://world.openfoodfacts.org/api/v2/product/{bc}.json"
         headers = {"User-Agent": "SugarDrinkSimulator/1.0"}
@@ -361,37 +368,24 @@ elif current_step == 2:
             st.rerun()
 
 # =========================================================
-# [Step 3] 음료 바코드 및 제품 확인 화면
+# [Step 3] 음료 바코드 자동 실시간 스캔 화면
 # =========================================================
 elif current_step == 3:
-    st.subheader("📷 3단계: 음료 바코드 및 제품 확인")
-    st.write("음료의 바코드를 촬영하거나 번호를 입력하면 자동으로 다음 단계로 넘어갑니다.")
+    st.subheader("📷 3단계: 음료 바코드 자동 스캔")
+    st.write("카메라 화면에 바코드를 비추면 **셔터를 누르지 않아도 자동 인식**되어 넘어갑니다.")
 
     reset_cnt = st.session_state.scan_reset_cnt
     barcode_input = ""
 
-    if SCAN_OK:
-        uploaded_photo = st.file_uploader(
-            "📸 후면 카메라로 바로 촬영하기 (눌러서 '사진 찍기' 선택)",
-            type=["png", "jpg", "jpeg"],
-            key=f"upload_{reset_cnt}",
-        )
-        if uploaded_photo:
-            barcode_input = extract_barcode_from_image(uploaded_photo)
-            if not barcode_input:
-                st.warning("사진에서 바코드를 읽지 못했어요. 바코드가 선명하게 나오도록 다시 찍어주세요.")
-
-        with st.expander("또는 웹 카메라로 직접 찍기 (전면 카메라가 켜지면 🔄 버튼으로 전환)"):
-            photo = st.camera_input(
-                "바코드를 가까이 비춰 촬영하세요", key=f"cam_{reset_cnt}"
-            )
-            if photo and not barcode_input:
-                barcode_input = extract_barcode_from_image(photo)
-                if not barcode_input:
-                    st.warning("바코드를 인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
+    if LIVE_SCAN_OK:
+        st.caption("💡 카메라 권한을 허용한 뒤, 밝은 곳에서 바코드를 15~20cm 거리에 맞춰주세요.")
+        scanned_code = qrcode_scanner(key=f"live_scanner_{reset_cnt}")
+        if scanned_code:
+            barcode_input = str(scanned_code).strip()
     else:
-        st.info("바코드 스캔 기능을 불러오지 못해 직접 입력만 가능합니다.")
+        st.info("실시간 스캐너를 불러오는 중이거나 지원되지 않는 환경입니다. 아래에서 직접 입력하거나 사진을 올려주세요.")
 
+    # 보조 수단: 바코드 번호 직접 입력 및 사진 업로드
     manual = st.text_input(
         "또는 바코드 번호 직접 입력 후 엔터(Enter)",
         placeholder="바코드 숫자(8~14자리)를 입력하세요",
@@ -400,10 +394,22 @@ elif current_step == 3:
     if manual.strip():
         barcode_input = manual.strip()
 
+    if PHOTO_SCAN_OK:
+        with st.expander("📸 사진 찍기 / 갤러리 이미지로 인식하기"):
+            uploaded_photo = st.file_uploader(
+                "바코드 사진을 선택하거나 촬영하세요",
+                type=["png", "jpg", "jpeg"],
+                key=f"upload_{reset_cnt}",
+            )
+            if uploaded_photo and not barcode_input:
+                barcode_input = extract_barcode_from_image(uploaded_photo)
+                if not barcode_input:
+                    st.warning("사진에서 바코드를 읽지 못했어요. 바코드가 선명하게 나오도록 다시 찍어주세요.")
+
     if barcode_input.strip():
         bc_clean = barcode_input.strip()
         if re.fullmatch(r"\d{8,14}", bc_clean):
-            with st.spinner("제품 정보를 조회하고 다음 단계로 이동하는 중..."):
+            with st.spinner(f"바코드({bc_clean}) 인식 완료! 제품 정보를 조회하는 중..."):
                 prod_name, found_100ml, source_type = lookup_nutrition_100ml(bc_clean)
 
             st.session_state.barcode = bc_clean
@@ -417,8 +423,7 @@ elif current_step == 3:
             st.rerun()
         else:
             st.warning(
-                "유효한 상품 바코드(숫자 8~14자리)가 아닙니다. 바코드를 다시 찍거나 숫자로"
-                " 입력해 주세요."
+                f"인식된 값({bc_clean})이 일반 상품 바코드(숫자 8~14자리)가 아닙니다. 음료 바코드를 다시 비춰주세요."
             )
 
     st.write("---")
@@ -579,21 +584,17 @@ elif current_step == 5:
     servings = st.session_state.servings
     months = st.session_state.months
 
-    # 하루 음료 당류 섭취량 및 당류 유래 열량 (당류 1g = 4kcal)
     daily_sugar_g = round(once_sugar * servings, 1)
     drink_kcal_per_day = daily_sugar_g * 4
 
-    # 식습관(가정치) 및 순수 추가 운동 소모 열량 ((MET - 1) × 체중 × 시간)
     food_kcal_per_day = FOOD_OPTIONS.get(st.session_state.food_intake, 0)
     net_ex_factor = EXERCISE_OPTIONS.get(st.session_state.exercise, 0.0)
     exercise_burn_per_day = round(weight * net_ex_factor)
 
-    # 하루 순 열량 변화 및 1개월 / 설정 기간 누적 열량
     net_daily_kcal = drink_kcal_per_day + food_kcal_per_day - exercise_burn_per_day
     one_month_net_kcal = net_daily_kcal * 30
     total_net_kcal = net_daily_kcal * 30 * months
 
-    # 체중 1kg ≈ 7,700kcal 환산 (교육용 가상 시뮬레이션)
     simulated_weight = max(35.0, weight + total_net_kcal / 7700)
     weight_diff = simulated_weight - weight
     simulated_bmi = simulated_weight / (height_m ** 2)
@@ -611,7 +612,6 @@ elif current_step == 5:
 
     st.subheader(f"🔮 {months}개월 뒤 체형 변화 결과")
 
-    # 모바일에서도 무조건 가로(과거 체형 -> 추정 체형)로 나란히 보이는 비교 카드
     before_b64 = img_to_base64(f"{prefix} {initial_step}.png")
     after_b64 = img_to_base64(f"{prefix} {simulated_step}.png")
 
