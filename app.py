@@ -24,24 +24,36 @@ st.write(
 )
 st.write("---")
 
-# 1. 사용자 기본 정보 입력 (성별, 나이, 키, 몸무게)
+# 1. 첫 화면: 사용자 기본 정보 입력 (성별, 나이, 키, 몸무게)
+st.subheader("👤 기본 정보를 입력해주세요")
 col1, col2 = st.columns(2)
 with col1:
   gender = st.radio("성별을 선택하세요", ["남자", "여자"])
 with col2:
   age = st.number_input(
-      "나이를 입력하세요", min_value=10, max_value=100, value=22
+      "나이를 입력하세요", min_value=10, max_value=100, value=25
   )
 
 col3, col4 = st.columns(2)
 with col3:
   height = st.number_input(
-      "키(cm)를 입력하세요", min_value=100.0, max_value=250.0, value=174.0
+      "키(cm)를 입력하세요", min_value=100.0, max_value=250.0, value=175.0
   )
 with col4:
   weight = st.number_input(
       "몸무게(kg)를 입력하세요", min_value=30.0, max_value=200.0, value=65.0
   )
+
+# [클로드의 핵심 제안] 버튼을 누르기 전에는 아래 내용을 숨김 (단계 분리)
+if "started" not in st.session_state:
+  st.session_state.started = False
+
+st.write("")
+if not st.session_state.started:
+  if st.button("확인하고 시작하기 ▶", use_container_width=True):
+    st.session_state.started = True
+    st.rerun()
+  st.stop()
 
 
 # 초기 BMI 계산 및 5단계 매핑 함수
@@ -63,9 +75,10 @@ initial_height_m = height / 100.0
 initial_bmi = weight / (initial_height_m**2)
 initial_step = get_bmi_step(initial_bmi)
 
-# 성별에 따른 이미지 파일명 접두사 설정 (띄어쓰기 및 파일명 일치)
+# 성별에 따른 이미지 파일명 접두사 설정
 prefix = "boy" if gender == "남자" else "girl"
 
+st.write("---")
 st.subheader(f"📊 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
 
 # 초기 캐릭터 이미지 출력
@@ -138,6 +151,7 @@ if barcode.strip():
     )
 
 # 3. 당류 섭취량 및 기간 설정에 따른 시뮬레이션
+st.write("---")
 st.subheader("🍬 당류 섭취량 및 기간 설정")
 sugar = st.number_input(
     "음료 영양성분표의 당류(g)를 입력하세요 (1회 제공량 기준)",
