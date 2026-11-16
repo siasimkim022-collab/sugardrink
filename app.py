@@ -21,7 +21,7 @@ API_KEY = st.secrets["API_KEY"]
 # 세션 상태 초기화 (화면이 바뀌어도 입력값이 유지되도록 저장)
 defaults = {
     "step": 1,
-    "gender": "",
+    "gender": "남자",
     "age": 0,
     "height": 00.0,
     "weight": 00.0,
