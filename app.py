@@ -1,7 +1,13 @@
 import streamlit as st
 import requests
 from PIL import Image, ImageOps
-from pyzbar.pyzbar import decode
+
+try:
+  from pyzbar.pyzbar import decode
+
+  SCAN_OK = True
+except Exception:
+  SCAN_OK = False
 
 # 페이지 설정
 st.set_page_config(
@@ -57,12 +63,12 @@ initial_height_m = height / 100.0
 initial_bmi = weight / (initial_height_m**2)
 initial_step = get_bmi_step(initial_bmi)
 
-# 성별에 따른 이미지 파일명 접두사 설정
+# 성별에 따른 이미지 파일명 접두사 설정 (띄어쓰기 및 파일명 일치)
 prefix = "boy" if gender == "남자" else "girl"
 
 st.subheader(f"📊 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
 
-# 초기 캐릭터 이미지 출력 (파일명 대소문자 및 띄어쓰기 철저히 일치)
+# 초기 캐릭터 이미지 출력
 initial_image_path = f"step {initial_step} {prefix}.png"
 try:
   initial_img = Image.open(initial_image_path)
@@ -76,32 +82,33 @@ except Exception:
 
 st.write("---")
 
-# 2. 바코드 인식 또는 직접 입력 기능
-st.subheader("📷 음료 바코드 스캔하기")
-photo = st.camera_input("음료의 바코드를 카메라에 선명하게 비춰주세요")
-barcode = None
+# 2. 바코드 카메라 인식 또는 직접 입력
+st.subheader("📷 음료 바코드 및 제품 확인")
+barcode = ""
 
-if photo:
-  img = Image.open(photo).convert("L")
-  results = decode(img)
-  if not results:
-    img = ImageOps.autocontrast(img)
-    img = img.resize((img.width * 2, img.height * 2))
+if SCAN_OK:
+  photo = st.camera_input("바코드를 가까이, 선명하게 비춰 촬영하세요")
+  if photo:
+    img = Image.open(photo).convert("L")
     results = decode(img)
+    if not results:
+      img = ImageOps.autocontrast(img)
+      img = img.resize((img.width * 2, img.height * 2))
+      results = decode(img)
+    if results:
+      barcode = results[0].data.decode("utf-8")
+      st.success(f"인식된 바코드: {barcode}")
+    else:
+      st.warning("인식하지 못했어요. 다시 찍거나 아래에 직접 입력해 주세요.")
+else:
+  st.info("바코드 스캔 기능을 불러오지 못해 직접 입력만 가능합니다.")
 
-  codes = [r.data.decode("utf-8") for r in results]
-  if codes:
-    barcode = codes[0]
-    st.success(f"인식된 바코드: {barcode}")
-  else:
-    st.warning("바코드를 인식하지 못했습니다. 아래에 직접 입력해 주세요.")
-
-manual_barcode = st.text_input("또는 바코드 번호 13자리 직접 입력")
-if manual_barcode.strip():
-  barcode = manual_barcode.strip()
+manual = st.text_input("또는 바코드 번호 직접 입력", placeholder="바코드 숫자를 입력하세요")
+if manual.strip():
+  barcode = manual.strip()
 
 
-# 3. 제품 조회 (제품명만 확인)
+# 제품 조회 함수 (식품안전나라 API)
 def lookup_product(bc):
   url = (
       f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/C005/json/1/5/BAR_CD={bc}"
@@ -116,21 +123,21 @@ def lookup_product(bc):
 
 
 prod_name = None
-if barcode:
+if barcode.strip():
   try:
-    prod_name = lookup_product(barcode)
+    prod_name = lookup_product(barcode.strip())
   except Exception as e:
     st.error(f"API 조회 중 오류가 발생했습니다: {e}")
 
   if prod_name:
-    st.info(f"✨ 제품명: **{prod_name}**")
+    st.info(f"✨ 인식된 제품명: **{prod_name}**")
   else:
     st.warning(
-        "제품 정보를 찾지 못했거나 등록되지 않은 바코드입니다. 아래에서 당류를"
+        "등록되지 않은 바코드이거나 정보를 찾지 못했습니다. 아래에서 당류를"
         " 직접 입력해 주세요."
     )
 
-# 4. 당류 입력 및 기간 설정에 따른 시뮬레이션
+# 3. 당류 섭취량 및 기간 설정에 따른 시뮬레이션
 st.subheader("🍬 당류 섭취량 및 기간 설정")
 sugar = st.number_input(
     "음료 영양성분표의 당류(g)를 입력하세요 (1회 제공량 기준)",
@@ -166,4 +173,4 @@ except Exception:
 if simulated_step > initial_step:
   st.error("⚠️ 이 습관이 이어지면 체형 단계가 올라갈 수 있습니다!")
 else:
-  st.success("🎉 현재 체형 단계를 유지할 수 있는 수준입니다.")
+  st.success("🎉 현재 체형 단계를 안전하게 유지할 수 있는 수준입니다.")
