@@ -81,10 +81,11 @@ st.subheader(f"📊 나의 현재 체형 진단 (BMI: {initial_bmi:.1f})")
 initial_image_path = f"step {initial_step} {prefix}.png"
 try:
   initial_img = Image.open(initial_image_path)
+  # [수정] 이미지가 너무 커지지 않도록 width를 제한 (예: 250픽셀)
   st.image(
       initial_img,
       caption=f"현재 상태 (Step {initial_step})",
-      use_container_width=True,
+      width=250,
   )
 except Exception:
   st.warning(f"이미지 파일을 찾지 못했습니다: {initial_image_path}")
@@ -117,7 +118,7 @@ if manual.strip():
   barcode = manual.strip()
 
 
-# [클로드 핵심 제안] C005(제품명) + I2790(영양성분) 조회 - 실패 시 솔직하게 표시 및 디버그 기능 추가
+# C005(제품명) + I2790(영양성분) 조회 함수
 def get_product_and_sugar(bc):
   prod_name, sugar_val = None, None
   debug = {}
@@ -201,10 +202,11 @@ st.caption("섭취 열량만 늘고 다른 조건은 같다고 가정한 단순 
 
 sim_image_path = f"step {simulated_step} {prefix}.png"
 try:
+  # [수정] 미래 체형 이미지도 너무 커지지 않도록 width를 250으로 제한
   st.image(
       Image.open(sim_image_path),
       caption=f"{months}개월 뒤 변화된 모습 (Step {simulated_step})",
-      use_container_width=True,
+      width=250,
   )
 except Exception:
   st.warning(f"이미지 파일을 찾지 못했습니다: {sim_image_path}")
