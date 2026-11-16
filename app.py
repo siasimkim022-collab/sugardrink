@@ -465,10 +465,13 @@ elif current_step == 5:
   simulated_step = get_bmi_step(simulated_bmi)
 
   st.subheader(f"🔮 5단계: {months}개월 뒤 예상 체형 결과")
-  st.write(
-      f"예상 체중: **{simulated_weight:.1f}kg** (현재 대비"
-      f" **+{simulated_weight - weight:.1f}kg**) / 예상 BMI:"
-      f" **{simulated_bmi:.1f}**"
+  st.markdown(
+      "<p style='font-size: 26px; font-weight: 700; line-height: 1.4;"
+      f" margin-bottom: 8px;'>예상 체중: <span style='color:"
+      f" #FF4B4B;'>{simulated_weight:.1f}kg</span> (현재 대비"
+      f" +{simulated_weight - weight:.1f}kg) / 예상 BMI:"
+      f" {simulated_bmi:.1f}</p>",
+      unsafe_allow_html=True,
   )
   st.caption("섭취 열량만 늘고 다른 조건은 같다고 가정한 단순 계산입니다.")
 
