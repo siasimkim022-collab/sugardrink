@@ -1,4 +1,5 @@
-import urllib.parse
+import json
+import re
 from PIL import Image, ImageOps
 import requests
 import streamlit as st
@@ -118,7 +119,104 @@ if manual.strip():
   barcode = manual.strip()
 
 
-# 바코드 -> 제품명 및 당류(g) 자동 조회 함수
+# 국내 주요 시판 음료 참고용 대표 당류 데이터
+KOREAN_DRINK_SUGAR_DB = {
+    "트레비": [("1캔/1병 기준 (무당 탄산수)", 0.0)],
+    "씨그램": [("1캔/1병 기준 (무당 탄산수)", 0.0)],
+    "하늘보리": [("1병 기준 (무당 차음료)", 0.0)],
+    "옥수수수염차": [("1병 기준 (무당 차음료)", 0.0)],
+    "헛개수": [("1병 기준 (무당 차음료)", 0.0)],
+    "코카콜라": [
+        ("250ml 캔 기준", 27.0),
+        ("355ml 캔 기준", 38.0),
+        ("500ml 페트 기준", 54.0),
+    ],
+    "펩시콜라": [
+        ("250ml 캔 기준", 27.0),
+        ("355ml 캔 기준", 39.0),
+        ("500ml 페트 기준", 55.0),
+    ],
+    "칠성사이다": [
+        ("250ml 캔 기준", 27.0),
+        ("355ml 캔 기준", 38.0),
+        ("500ml 페트 기준", 54.0),
+    ],
+    "스프라이트": [
+        ("250ml 캔 기준", 25.0),
+        ("355ml 캔 기준", 36.0),
+        ("500ml 페트 기준", 50.0),
+    ],
+    "환타": [
+        ("250ml 캔 기준", 26.0),
+        ("355ml 캔 기준", 37.0),
+        ("500ml 페트 기준", 52.0),
+    ],
+    "밀키스": [
+        ("250ml 캔 기준", 25.0),
+        ("340ml 캔 기준", 34.0),
+        ("500ml 페트 기준", 50.0),
+    ],
+    "포카리스웨트": [
+        ("240ml/250ml 캔 기준", 15.0),
+        ("340ml 캔 기준", 20.0),
+        ("500ml 페트 기준", 30.0),
+    ],
+    "게토레이": [("240ml 캔 기준", 14.0), ("600ml 페트 기준", 36.0)],
+    "파워에이드": [("240ml 캔 기준", 14.0), ("600ml 페트 기준", 34.0)],
+    "토레타": [("240ml 캔 기준", 11.0), ("500ml 페트 기준", 22.0)],
+    "데미소다": [("250ml 캔 기준", 24.0)],
+    "웰치스": [("355ml 캔 기준", 42.0)],
+    "마운틴듀": [("250ml 캔 기준", 31.0), ("355ml 캔 기준", 44.0)],
+    "닥터페퍼": [("250ml 캔 기준", 26.0), ("355ml 캔 기준", 37.0)],
+    "봉봉": [("238ml 캔 기준", 24.0), ("340ml 캔 기준", 34.0)],
+    "코코팜": [("240ml 캔 기준", 24.0), ("340ml 캔 기준", 34.0)],
+    "갈아만든배": [("238ml 캔 기준", 24.0), ("340ml 캔 기준", 34.0)],
+    "바나나맛우유": [("240ml 용기 기준", 27.0)],
+    "초코에몽": [("190ml 팩 기준", 21.0)],
+    "레쓰비": [("175ml 캔 기준", 14.0)],
+    "칸타타": [("275ml 캔 기준", 18.0)],
+    "조지아": [("240ml~275ml 캔 기준", 17.0)],
+    "비락식혜": [("238ml 캔 기준", 22.0)],
+    "핫식스": [("250ml 캔 기준", 24.0)],
+    "몬스터에너지": [("355ml 캔 기준", 39.0)],
+    "레드불": [("250ml 캔 기준", 27.0)],
+    "비타500": [("100ml 병 기준", 10.0)],
+    "박카스": [("100ml 병 기준", 12.0)],
+    "야쿠르트": [("65ml 병 기준", 9.0)],
+    "쿨피스": [("250ml 팩 기준", 22.0), ("930ml 팩 기준", 82.0)],
+    "립톤": [("250ml 캔 기준", 19.0), ("500ml 페트 기준", 38.0)],
+    "실론티": [("240ml 캔 기준", 18.0), ("500ml 페트 기준", 36.0)],
+    "데자와": [("240ml 캔 기준", 18.0), ("500ml 페트 기준", 36.0)],
+    "이프로": [("240ml 캔 기준", 14.0), ("500ml 페트 기준", 29.0)],
+}
+
+
+def find_local_sugar_options(prod_name):
+  if not prod_name:
+    return []
+  norm_name = re.sub(r"[^가-힣a-zA-Z0-9]", "", prod_name).lower()
+
+  # 제로/무설탕 제품은 일반 설탕 음료보다 먼저 판별
+  if any(w in norm_name for w in ["제로", "zero", "무설탕"]):
+    return [{
+        "label": f"{prod_name} · 제로/무설탕 제품: 0g (참고용 대표값)",
+        "sugar": 0.0,
+        "is_ref": True,
+    }]
+
+  for key in sorted(KOREAN_DRINK_SUGAR_DB.keys(), key=len, reverse=True):
+    if key in norm_name:
+      return [
+          {
+              "label": f"{prod_name} · {size_label}: {sugar_g}g (참고용 대표값)",
+              "sugar": sugar_g,
+              "is_ref": True,
+          }
+          for size_label, sugar_g in KOREAN_DRINK_SUGAR_DB[key]
+      ]
+  return []
+
+
 def lookup_nutrition(bc):
   prod_name = None
   sugar_options = []
@@ -155,37 +253,35 @@ def lookup_nutrition(bc):
         label = (
             f"OpenFoodFacts (1회 제공량 {serving_size or '기준'}): {val}g"
         )
-        sugar_options.append({"label": label, "sugar": val})
+        sugar_options.append({"label": label, "sugar": val, "is_ref": False})
       elif nutriments.get("sugars_100g") is not None:
-        val = float(nutriments["sugars_100g"])
-        label = f"OpenFoodFacts (100ml/100g 기준): {val}g"
-        sugar_options.append({"label": label, "sugar": val})
+        per100 = float(nutriments["sugars_100g"])
+        m = re.search(
+            r"([\d.]+)\s*(ml|l)\b", (product.get("quantity") or "").lower()
+        )
+        if m:
+          ml = float(m.group(1)) * (1000 if m.group(2) == "l" else 1)
+          val = round(per100 * ml / 100, 1)
+          label = f"OpenFoodFacts (총 {ml:.0f}ml 환산): {val}g"
+        else:
+          val = per100
+          label = (
+              f"OpenFoodFacts (100ml 기준 {val}g, 마시는 양에 맞게 수정하세요)"
+          )
+        sugar_options.append({"label": label, "sugar": val, "is_ref": False})
   except Exception as e:
     debug["OpenFoodFacts_error"] = str(e)
 
-  # 3단계: 식품안전나라 I2790에서 제품명(DESC_KOR)으로 영양성분 조회
-  if prod_name:
-    try:
-      encoded_name = urllib.parse.quote(prod_name.strip())
-      url_i2790 = f"http://openapi.foodsafetykorea.go.kr/api/{API_KEY}/I2790/json/1/5/DESC_KOR={encoded_name}"
-      data_i2790 = requests.get(url_i2790, timeout=5).json()
-      debug["I2790"] = data_i2790
-      rows_i2790 = data_i2790.get("I2790", {}).get("row", [])
-      for r in rows_i2790:
-        raw_sugar = r.get("NUTR_CONT5")
-        if raw_sugar not in (None, "", "-"):
-          try:
-            val = float(raw_sugar)
-            desc = r.get("DESC_KOR", prod_name)
-            size = r.get("SERVING_SIZE", "")
-            size_txt = f" / 기준량 {size}" if size else ""
-            sugar_options.append(
-                {"label": f"식품안전나라 ({desc}{size_txt}): {val}g", "sugar": val}
-            )
-          except (TypeError, ValueError):
-            pass
-    except Exception as e:
-      debug["I2790_error"] = str(e)
+  # 3단계: 국내 대표 음료 참고용 대표값 매칭
+  if not sugar_options and prod_name:
+    local_opts = find_local_sugar_options(prod_name)
+    if local_opts:
+      sugar_options.extend(local_opts)
+      debug["local_match"] = prod_name
+
+  # API 키 노출 방지 마스킹
+  if API_KEY:
+    debug = json.loads(json.dumps(debug, default=str).replace(API_KEY, "***"))
 
   return prod_name, sugar_options, debug
 
@@ -207,23 +303,27 @@ if barcode.strip():
     selected_idx = 0
     if len(sugar_options) > 1:
       labels = [opt["label"] for opt in sugar_options]
-      chosen = st.selectbox(
-          "조회된 영양성분 기준을 선택하세요 (용량/출처별)", labels
-      )
+      chosen = st.selectbox("용량/기준을 선택하세요", labels)
       selected_idx = labels.index(chosen)
 
-    auto_sugar = sugar_options[selected_idx]["sugar"]
+    selected_opt = sugar_options[selected_idx]
+    auto_sugar = selected_opt["sugar"]
     input_key = f"sugar_{bc_clean}_{selected_idx}"
-    st.success(
-        f"✅ 자동 조회된 당류: **{auto_sugar}g** ({sugar_options[selected_idx]['label']})"
-    )
+
+    if selected_opt.get("is_ref"):
+      st.info(f"💡 당류(참고값): **{auto_sugar}g** ({selected_opt['label']})")
+    else:
+      st.success(
+          f"✅ DB 조회 당류: **{auto_sugar}g** ({selected_opt['label']})"
+      )
   else:
     input_key = f"sugar_{bc_clean}_none"
     st.warning(
-        "이 음료의 당류 데이터가 DB에 없어 자동으로 불러오지 못했습니다. 아래에"
+        "등록되지 않은 음료라 당류를 자동으로 불러오지 못했습니다. 아래에"
         " 영양성분표를 보고 입력해 주세요."
     )
 
+  # 테스트 완료 후에는 아래 expander 블록을 삭제하는 것이 안전합니다
   with st.expander("🔧 API 응답 확인 (개발용)"):
     st.json(debug_info)
 
