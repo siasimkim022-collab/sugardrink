@@ -41,18 +41,28 @@ for k, v in defaults.items():
     st.session_state[k] = v
 
 
-# 초기 BMI 계산 및 5단계 매핑 함수
+# 초기 BMI 계산 및 10단계 매핑 함수
 def get_bmi_step(bmi):
-  if bmi < 18.5:
-    return 1  # Slim
-  elif 18.5 <= bmi < 23:
-    return 2  # Average
-  elif 23 <= bmi < 25:
-    return 3  # Chubby
-  elif 25 <= bmi < 30:
-    return 4  # Overweight
+  if bmi < 17.5:
+    return 1  # 저체중 심화
+  elif bmi < 18.5:
+    return 2  # 저체중
+  elif bmi < 20.5:
+    return 3  # 정상 (마름)
+  elif bmi < 23.0:
+    return 4  # 정상 (표준)
+  elif bmi < 25.0:
+    return 5  # 과체중 (비만 전단계)
+  elif bmi < 27.5:
+    return 6  # 1단계 비만 (초기)
+  elif bmi < 30.0:
+    return 7  # 1단계 비만 (후기)
+  elif bmi < 32.5:
+    return 8  # 2단계 비만 (초기)
+  elif bmi < 35.0:
+    return 9  # 2단계 비만 (후기)
   else:
-    return 5  # Obese
+    return 10  # 3단계 고도비만
 
 
 # 이미지에서 바코드 숫자 추출 (가로/세로 회전 및 명암 보정 포함)
@@ -240,12 +250,12 @@ elif current_step == 2:
       f" **{st.session_state.weight:.1f}kg** 기준 현재 상태입니다."
   )
 
-  initial_image_path = f"step {initial_step} {prefix}.png"
+  initial_image_path = f"{prefix} {initial_step}.png"
   try:
     initial_img = Image.open(initial_image_path)
     st.image(
         initial_img,
-        caption=f"현재 상태 (Step {initial_step})",
+        caption=f"현재 상태 (Step {initial_step} / 10)",
         width=250,
     )
   except Exception:
@@ -496,11 +506,11 @@ elif current_step == 5:
   )
   st.caption("섭취 열량만 늘고 다른 조건은 같다고 가정한 단순 계산입니다.")
 
-  sim_image_path = f"step {simulated_step} {prefix}.png"
+  sim_image_path = f"{prefix} {simulated_step}.png"
   try:
     st.image(
         Image.open(sim_image_path),
-        caption=f"{months}개월 뒤 변화된 모습 (Step {simulated_step})",
+        caption=f"{months}개월 뒤 변화된 모습 (Step {simulated_step} / 10)",
         width=250,
     )
   except Exception:
