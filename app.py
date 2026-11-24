@@ -109,7 +109,6 @@ if "tip_target_steps" not in st.session_state:
 
 
 # 화면 이동 시 스크롤을 최상단으로 초기화하는 함수
-# 화면 이동 시 스크롤을 최상단으로 초기화하는 함수
 def scroll_to_top():
     sid = st.session_state.get("scroll_id", 0)
     components.html(
@@ -967,7 +966,8 @@ elif current_step == 5:
             f"- **1개월(30일) 누적 순 열량 변화:** **{one_month_net_kcal:+,.0f} kcal**\n"
             f"- **설정 기간({months}개월) 누적 순 열량 변화:** **{total_net_kcal:+,.0f} kcal**\n\n"
             f"※ 참고 기초대사량(만 {st.session_state.age}세 기준): 약 {bmr:,d} kcal/일 | 생활 습관 항목은"
-            " 현재 체중 유지 기준을 벗어난 변화를 체험하기 위한 교육용 가상 가정치입니다."
+            " 현재 체중 유지 기준을 벗어난 변화를 체험하기 위한 교육용 가상 가정치이며,"
+            " 7,700kcal = 1kg 단순 환산 방식이라 기간이 길수록 실제보다 과대 추정될 수 있습니다."
         )
 
     st.write("")
@@ -1072,7 +1072,7 @@ elif current_step == 6:
         )
     else:  # 수영하기
         est_laps = round(req_hours * 45)
-        detail_desc = f"25m 수영장 레인 기준 약 <b>{est_laps:,d}바퀴</b>를 왕복해야 소모되는 열량입니다."
+        detail_desc = f"25m 수영장 레인 기준 약 <b>{est_laps:,d}바퀴</b>를 왕복(50m)해야 소모되는 열량입니다."
 
     workout_card_html = f"""
     <div style="background:{spec['bg']}; border:2px solid {spec['border']}; border-radius:16px; padding:22px 16px; margin:10px 0 16px 0; text-align:center;">
@@ -1091,6 +1091,16 @@ elif current_step == 6:
     </div>
     """
     st.markdown(workout_card_html, unsafe_allow_html=True)
+
+    if total_drink_kcal > 0:
+        raw_day_min = req_hours * 60 / (30 * months)
+        per_day_text = (
+            "1분 미만" if raw_day_min < 1 else f"약 **{round(raw_day_min):,d}분**"
+        )
+        st.caption(
+            f"💡 하루로 나누면 매일 {per_day_text}씩 {workout}를 해야 하는 양입니다."
+            " (신체활동 METs 기반 추정치이며 속도·체력에 따라 개인차가 있습니다.)"
+        )
 
     st.caption("👇 아래 버튼을 눌러 다른 운동 방법으로도 확인해 보세요! (등산하기를 다시 누르면 다른 산이 지정됩니다)")
     btn_cols = st.columns(4)
