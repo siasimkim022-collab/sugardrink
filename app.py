@@ -50,7 +50,7 @@ FOOD_OPTIONS = {
 # 중간 전환용 건강 Tip 목록
 HEALTH_TIPS = [
     "소화 속도를 늦추는 '거꾸로 식사법': 식사 시 채소 → 단백질·지방 → 탄수화물 순서로 실천해 보세요!",
-    "액상과당은 고체 음식보다 포만감이 적어 혈당을 빠르게 올리고 체지방으로 전환되기 쉽습니다.",
+    "액상과당 음료는 고체 음식보다 포만감이 적어 열량을 과잉 섭취하기 쉽고, 과당은 간에서 대사되며 과잉 시 체지방 합성으로 이어질 수 있습니다.",
     "음료를 마신 뒤 10~15분만 가볍게 걸어도 식후 혈당이 급격히 오르는 것을 완화하는 데 도움이 될 수 있어요!",
     "세계보건기구(WHO)는 첨가당을 하루 총 열량의 10% 미만으로, 추가 건강 이득을 위해서는 5% 미만(성인 약 25g 이내)으로 줄이도록 권고합니다.",
     "음료 뒷면 영양성분표를 볼 때는 '100ml당' 기준인지 '총 내용량' 기준인지 꼭 확인해 보세요!",
@@ -504,15 +504,17 @@ if st.session_state.pending_tip_step is not None:
     st.write("---")
 
     tip_html = f"""
-    <div style="background:linear-gradient(135deg, #ECFDF5 0%, #EFF6FF 100%); border:2px solid #10B981; border-radius:16px; padding:26px 20px; margin:20px 0; text-align:center; box-shadow:0 4px 12px rgba(16,185,129,0.12);">
-        <div style="display:inline-block; background:#10B981; color:#FFFFFF; font-size:13px; font-weight:800; padding:4px 12px; border-radius:999px; margin-bottom:12px;">
-            💡 잠깐! 당류 건강 Tip
-        </div>
-        <div style="font-size:18px; font-weight:800; color:#0F172A; line-height:1.55; word-break:keep-all;">
-            {st.session_state.current_tip}
-        </div>
-        <div style="font-size:12px; color:#64748B; margin-top:14px;">
-            잠시 후 다음 화면으로 자동으로 넘어갑니다...
+    <div style="min-height: 48vh; display: flex; align-items: center; justify-content: center; padding: 12px 0;">
+        <div style="width: 100%; max-width: 520px; background: linear-gradient(135deg, #ECFDF5 0%, #EFF6FF 100%); border: 2px solid #10B981; border-radius: 16px; padding: 28px 22px; text-align: center; box-shadow: 0 6px 18px rgba(16,185,129,0.14);">
+            <div style="display: inline-block; background: #10B981; color: #FFFFFF; font-size: 13px; font-weight: 800; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px;">
+                💡 잠깐! 당류 건강 Tip
+            </div>
+            <div style="font-size: 18px; font-weight: 800; color: #0F172A; line-height: 1.6; word-break: keep-all;">
+                {st.session_state.current_tip}
+            </div>
+            <div style="font-size: 12px; color: #64748B; margin-top: 16px;">
+                잠시 후 다음 화면으로 자동으로 넘어갑니다...
+            </div>
         </div>
     </div>
     """
