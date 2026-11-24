@@ -109,6 +109,7 @@ if "tip_target_steps" not in st.session_state:
 
 
 # 화면 이동 시 스크롤을 최상단으로 초기화하는 함수
+# 화면 이동 시 스크롤을 최상단으로 초기화하는 함수
 def scroll_to_top():
     sid = st.session_state.get("scroll_id", 0)
     components.html(
@@ -117,21 +118,27 @@ def scroll_to_top():
         <script>
           function resetScrollTop() {{
             try {{
+              const doc = window.parent.document;
               window.parent.scrollTo({{ top: 0, left: 0, behavior: 'instant' }});
-              const targets = window.parent.document.querySelectorAll(
-                '[data-testid="stAppViewContainer"], section.main, .main, html, body'
+              const targets = doc.querySelectorAll(
+                '[data-testid="stMain"], [data-testid="stAppViewContainer"], section.main, .main, html, body'
               );
               targets.forEach((el) => {{
                 el.scrollTop = 0;
               }});
+              const topHeading = doc.querySelector('h1');
+              if (topHeading) {{
+                topHeading.scrollIntoView({{ behavior: 'instant', block: 'start' }});
+              }}
             }} catch (e) {{}}
           }}
           resetScrollTop();
           setTimeout(resetScrollTop, 50);
-          setTimeout(resetScrollTop, 160);
+          setTimeout(resetScrollTop, 150);
+          setTimeout(resetScrollTop, 300);
         </script>
         """,
-        height=0,
+        height=1,
     )
 
 
@@ -519,6 +526,8 @@ if st.session_state.pending_tip_step is not None:
     </div>
     """
     st.markdown(tip_html, unsafe_allow_html=True)
+    st.session_state.scroll_id += 1
+    scroll_to_top()
 
     time.sleep(2.6)
     st.session_state.step = next_s
