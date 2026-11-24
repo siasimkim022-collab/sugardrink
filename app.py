@@ -776,8 +776,8 @@ elif current_step == 5:
         <div style="font-size:22px; font-weight:900; color:#64748B; padding:0 2px;">➔</div>
         <div style="flex:1; background:#FFFBEB; border:2px solid #F59E0B; border-radius:12px; padding:10px 6px; text-align:center;">
             <div style="font-size:12px; font-weight:700; color:#B45309;">추정 체형 ({months}개월 후)</div>
+            <div style="font-size:23px; font-weight:900; color:{accent_color}; line-height:1.2; margin:4px 0 2px 0; letter-spacing:-0.02em;">{simulated_weight:.1f}kg <span style="font-size:15px; font-weight:800;">({diff_badge})</span></div>
             {after_img_html}
-            <div style="font-size:18px; font-weight:800; color:{accent_color};">{simulated_weight:.1f}kg <span style="font-size:13px;">({diff_badge})</span></div>
             <div style="font-size:11px; color:#64748B;">BMI {simulated_bmi:.1f} · Step {simulated_step} ({get_bmi_label(simulated_step)})</div>
         </div>
     </div>
